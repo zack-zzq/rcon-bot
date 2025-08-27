@@ -52,6 +52,10 @@ async def handle_message(websocket, data: dict):
     if not (data.get('post_type') == 'message' and data.get('message_type') == 'group'):
         return
 
+    # !! 新增的调试日志 !!
+    # 打印所有收到的群消息，方便我们看到原始数据
+    logging.info(f"Received group message data: {data}")
+
     user_id = data.get('user_id')
     group_id = data.get('group_id')
     raw_message = data.get('raw_message', '')
