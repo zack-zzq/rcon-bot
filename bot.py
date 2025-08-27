@@ -47,57 +47,63 @@ async def send_rcon_command(command: str) -> str:
         return f"错误：执行RCON指令时发生未知错误: {e}"
 
 async def handle_message(websocket, data: dict):
-    """处理收到的消息 (V3 - 兼容复杂CQ码)"""
+    """处理收到的消息 (V4 - 超级调试版)"""
     # 仅处理群消息
     if not (data.get('post_type') == 'message' and data.get('message_type') == 'group'):
         return
 
-    # 保留这行调试日志，直到我们确认功能完全正常
-    logging.info(f"Received group message data: {data}")
+    logging.info("--- [DEBUG] Start Processing Group Message ---")
 
     user_id = data.get('user_id')
     group_id = data.get('group_id')
     raw_message = data.get('raw_message', '').strip()
     
-    # 1. 权限检查：发送者是否在授权列表里
-    if str(user_id) not in AUTHORIZED_QQS:
+    logging.info(f"[DEBUG] 1. Raw message: '{raw_message}'")
+
+    # 调试第1步: 权限检查
+    is_authorized = str(user_id) in AUTHORIZED_QQS
+    logging.info(f"[DEBUG] 2. Authorization check for user {user_id}: {is_authorized}")
+    if not is_authorized:
+        logging.info("[DEBUG] End Processing: User not authorized.")
         return
         
-    # 2. 格式检查：消息是否是AT机器人
+    # 调试第2步: AT检查
     at_me_cq_pattern = f'[CQ:at,qq={BOT_QQ}]'
-    if at_me_cq_pattern not in raw_message:
-         # 改为检查是否包含AT码，更通用
+    is_at_me = at_me_cq_pattern in raw_message
+    logging.info(f"[DEBUG] 3. AT-me check: {is_at_me}")
+    if not is_at_me:
+        logging.info("[DEBUG] End Processing: Bot was not AT'd.")
         return
 
-    # 3. 提取AT之后的内容 (核心修改)
-    # 使用一个新的、更强大的正则表达式，它可以匹配 [CQ:at,qq=xxx] 中间的所有内容
-    # [^\]]* 意味着匹配任何不是 ']' 的字符
+    # 调试第3步: 提取内容
     content = re.sub(r'\[CQ:at,qq=\d+[^\]]*\]', '', raw_message).strip()
+    logging.info(f"[DEBUG] 4. Content after stripping AT: '{content}'")
     
-    # 4. 指令检查：内容是否以指令前缀开头
-    if content.startswith(COMMAND_PREFIX):
+    # 调试第4步: 指令前缀检查
+    is_command = content.startswith(COMMAND_PREFIX)
+    logging.info(f"[DEBUG] 5. Is it a command (starts with '{COMMAND_PREFIX}')? {is_command}")
+    if is_command:
         command = content[len(COMMAND_PREFIX):].strip()
+        logging.info(f"[DEBUG] 6. Extracted command: '{command}'")
         
         if not command:
             reply_text = "请输入Minecraft指令。"
         else:
-            # 执行RCON指令
-            logging.info(f"User {user_id} is executing command: '{command}'") # 增加执行日志
+            logging.info(f"[DEBUG] 7. EXECUTING RCON COMMAND!")
             reply_text = await send_rcon_command(command)
 
-        # 构建回复消息，AT回发送者
+        # 构建回复消息
         at_sender_cq = f'[CQ:at,qq={user_id}]'
         full_reply = f"{at_sender_cq}\n[MC服务器返回]\n----------------\n{reply_text}"
-
         reply_payload = {
             "action": "send_group_msg",
-            "params": {
-                "group_id": group_id,
-                "message": full_reply
-            }
+            "params": { "group_id": group_id, "message": full_reply }
         }
         await websocket.send(json.dumps(reply_payload))
         logging.info(f"Replied to authorized user {user_id} in group {group_id}.")
+    else:
+        logging.info("[DEBUG] End Processing: Content does not start with command prefix.")
+
 
 
 async def bot_client():
