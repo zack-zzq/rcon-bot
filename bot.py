@@ -47,31 +47,32 @@ async def send_rcon_command(command: str) -> str:
         return f"错误：执行RCON指令时发生未知错误: {e}"
 
 async def handle_message(websocket, data: dict):
-    """处理收到的消息"""
+    """处理收到的消息 (V3 - 兼容复杂CQ码)"""
     # 仅处理群消息
     if not (data.get('post_type') == 'message' and data.get('message_type') == 'group'):
         return
 
-    # !! 新增的调试日志 !!
-    # 打印所有收到的群消息，方便我们看到原始数据
+    # 保留这行调试日志，直到我们确认功能完全正常
     logging.info(f"Received group message data: {data}")
 
     user_id = data.get('user_id')
     group_id = data.get('group_id')
-    raw_message = data.get('raw_message', '')
+    raw_message = data.get('raw_message', '').strip()
     
     # 1. 权限检查：发送者是否在授权列表里
     if str(user_id) not in AUTHORIZED_QQS:
         return
         
-    # 2. 格式检查：消息是否是AT机器人开头
-    at_me_cq = f'[CQ:at,qq={BOT_QQ}]'
-    if not raw_message.strip().startswith(at_me_cq):
+    # 2. 格式检查：消息是否是AT机器人
+    at_me_cq_pattern = f'[CQ:at,qq={BOT_QQ}]'
+    if at_me_cq_pattern not in raw_message:
+         # 改为检查是否包含AT码，更通用
         return
 
-    # 3. 提取AT之后的内容
-    # 使用正则表达式去除CQ码和首尾空格，更稳定
-    content = re.sub(r'\[CQ:at,qq=\d+\]', '', raw_message).strip()
+    # 3. 提取AT之后的内容 (核心修改)
+    # 使用一个新的、更强大的正则表达式，它可以匹配 [CQ:at,qq=xxx] 中间的所有内容
+    # [^\]]* 意味着匹配任何不是 ']' 的字符
+    content = re.sub(r'\[CQ:at,qq=\d+[^\]]*\]', '', raw_message).strip()
     
     # 4. 指令检查：内容是否以指令前缀开头
     if content.startswith(COMMAND_PREFIX):
@@ -81,6 +82,7 @@ async def handle_message(websocket, data: dict):
             reply_text = "请输入Minecraft指令。"
         else:
             # 执行RCON指令
+            logging.info(f"User {user_id} is executing command: '{command}'") # 增加执行日志
             reply_text = await send_rcon_command(command)
 
         # 构建回复消息，AT回发送者
